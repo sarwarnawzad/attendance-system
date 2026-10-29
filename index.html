@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Attendance & Certificate System</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://jsdelivr.net"></script>
+    <!-- HTML5 QR Code Scanner Library -->
+    <script src="https://unpkg.com" type="text/javascript"></script>
+    <!-- EmailJS SDK to send emails via frontend -->
+    <script type="text/javascript" src="https://jsdelivr.net"></script>
+</head>
+<body class="bg-slate-50 font-sans min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 text-center">
+        <h1 class="text-2xl font-bold text-slate-800 mb-2">Event Check-In</h1>
+        <p class="text-sm text-slate-500 mb-6">Scan an attendee's QR code to verify attendance and dispatch their certificate.</p>
+        
+        <!-- Scanner Window -->
+        <div id="reader" class="overflow-hidden rounded-xl border border-slate-200 bg-black mb-6"></div>
+        
+        <!-- Status Notification Box -->
+        <div id="status-box" class="hidden p-4 rounded-xl text-sm font-semibold transition-all">
+            <p id="status-text"></p>
+        </div>
+    </div>
+
+    <!-- Hidden canvas used to dynamically generate the certificate image -->
+    <canvas id="certificateCanvas" width="800" height="600" class="hidden"></canvas>
+
+    <script>
+        // 🚨 CONFIGURATION: Replace these with your actual EmailJS credentials
+        const EMAILJS_PUBLIC_KEY = "YOUR_EMAILJS_PUBLIC_KEY";
+        const EMAILJS_SERVICE_ID = "YOUR_EMAILJS_SERVICE_ID";
+        const EMAILJS_TEMPLATE_ID = "YOUR_EMAILJS_TEMPLATE_ID";
+
+        // Initialize EmailJS
+        emailjs.init(EMAILJS_PUBLIC_KEY);
+
+        // Start the QR Scanner
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+        html5QrcodeScanner.render(onScanSuccess);
+
+        function onScanSuccess(decodedText) {
+            try {
+                // Parse the scanned URL string to extract name and email parameters
+                const url = new URL(decodedText);
+                const name = url.searchParams.get("name");
+                const email = url.searchParams.get("email");
+
+                if (name && email) {
+                    // Pause the scanner to prevent duplicate triggers
+                    html5QrcodeScanner.clear();
+                    showStatus(`Processing check-in for ${name}...`, "bg-amber-50 text-amber-700");
+                    
+                    generateAndSendCertificate(name, email);
+                } else {
+                    showStatus("Invalid QR Code structure. Missing name or email parameters.", "bg-red-50 text-red-700");
+                }
+            } catch (e) {
+                showStatus("Scanned item is not a valid check-in URL.", "bg-red-50 text-red-700");
+            }
+        }
+
+        function generateAndSendCertificate(name, email) {
+            const canvas = document.getElementById("certificateCanvas");
+            const ctx = canvas.getContext("2d");
+
+            // Design the Certificate Layout
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Outer Border
+            ctx.strokeStyle = "#1e293b";
+            ctx.lineWidth = 20;
+            ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+            
+            // Inner Border
+            ctx.strokeStyle = "#0ea5e9";
+            ctx.lineWidth = 4;
+            ctx.strokeRect(35, 35, canvas.width - 70, canvas.height - 70);
+
+            // Text Styles
+            ctx.fillStyle = "#1e293b";
+            ctx.textAlign = "center";
+            
+            ctx.font = "bold 32px Georgia";
+            ctx.fillText("CERTIFICATE OF ATTENDANCE", canvas.width / 2, 150);
+            
+            ctx.font = "italic 20px Georgia";
+            ctx.fillText("This certificate is proudly presented to", canvas.width / 2, 240);
+            
+            // Attendee Name
+            ctx.font = "bold 40px Helvetica";
+            ctx.fillStyle = "#0ea5e9";
+            ctx.fillText(name, canvas.width / 2, 320);
+            
+            // Event Details
+            ctx.fillStyle = "#1e293b";
+            ctx.font = "18px Helvetica";
+            ctx.fillText("For successfully participating and completing the scheduled event.", canvas.width / 2, 400);
+            
+            // Date
+            const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            ctx.font = "bold 16px Helvetica";
+            ctx.fillText(`Date: ${today}`, canvas.width / 2, 480);
+
+            // Convert the canvas graphic to a Base64 Data URL string
+            const certificateDataUrl = canvas.toDataURL("image/jpeg");
+
+            // Compile the payload to send via EmailJS
+            const emailParams = {
+                to_name: name,
+                to_email: email,
+                certificate_image: certificateDataUrl // EmailJS parses raw base64 data strings as image attachments
+            };
+
+            // Disptach the email
+            emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, emailParams)
+                .then(() => {
+                    showStatus(`Success! Certificate successfully emailed to ${email}`, "bg-green-50 text-green-700");
+                    // Reload scanner after a short delay to accept next attendee
+                    setTimeout(() => { location.reload(); }, 5000);
+                })
+                .catch((error) => {
+                    console.error("EmailJS Error:", error);
+                    showStatus("Failed to send email. Check API configurations.", "bg-red-50 text-red-700");
+                });
+        }
+
+        function showStatus(text, colorClasses) {
+            const box = document.getElementById("status-box");
+            const el = document.getElementById("status-text");
+            box.className = `p-4 rounded-xl text-sm font-semibold transition-all ${colorClasses}`;
+            el.innerText = text;
+            box.classList.remove("hidden");
+        }
+    </script>
+</body>
+</html>
